@@ -8,15 +8,21 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
+function escapeHref(url) {
+  return String(url || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '%22');
+}
+
 /**
  * Compact deal format:
  * Product Name
  * MRP: ₹X | Price: ₹Y | Z% OFF
- * Click here (direct search link)
+ * Click here (direct link)
  */
 function formatCompactItem(deal, index = null) {
   const directUrl = deal.itemLink || deal.searchLink || `https://www.swiggy.com/instamart/search?custom_back=true&query=${encodeURIComponent(deal.name)}`;
-  const safeUrl = directUrl.replace(/"/g, '%22');
+  const safeUrl = escapeHref(directUrl);
   const num = index !== null ? `${index}. ` : '• ';
 
   return (
@@ -30,19 +36,46 @@ function formatDealMessage(deal) {
   return formatCompactItem(deal);
 }
 
-async function sendDealAlert(bot, chatId, deal) {
-  const text = formatCompactItem(deal);
-
+async function sendTelegramSafe(bot, chatId, htmlText) {
   try {
-    await bot.sendMessage(chatId, text, {
+    await bot.sendMessage(chatId, htmlText, {
       parse_mode: 'HTML',
       disable_web_page_preview: true
     });
     return true;
   } catch (err) {
-    console.error('[Notifier] Failed to send alert for:', deal.name, err.message);
+    const detail = err?.response?.body
+      ? JSON.stringify(err.response.body)
+      : (err.message || String(err));
+    console.error(`[Notifier] ❌ HTML send failed for chat ${chatId}: ${detail}`);
+
+    // Fallback to plain text if Telegram rejected HTML formatting
+    if (String(detail).toLowerCase().includes('parse entities')) {
+      const plainText = htmlText
+        .replace(/<a href="([^"]+)">([^<]+)<\/a>/gi, '$2: $1')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"');
+      try {
+        await bot.sendMessage(chatId, plainText, { disable_web_page_preview: true });
+        console.log(`[Notifier] ✅ Sent plain-text fallback to chat ${chatId}.`);
+        return true;
+      } catch (fallbackErr) {
+        const fbDetail = fallbackErr?.response?.body
+          ? JSON.stringify(fallbackErr.response.body)
+          : (fallbackErr.message || String(fallbackErr));
+        console.error(`[Notifier] ❌ Plain-text fallback also failed: ${fbDetail}`);
+      }
+    }
     return false;
   }
+}
+
+async function sendDealAlert(bot, chatId, deal) {
+  const text = formatCompactItem(deal);
+  return sendTelegramSafe(bot, chatId, text);
 }
 
 /**
@@ -53,9 +86,9 @@ async function sendBatchAlerts(bot, chatId, deals, options = {}) {
   if (!deals || !deals.length) return;
   console.log(`[Notifier] Sending ${deals.length} deals in consolidated message(s) to chat ${chatId}…`);
 
-  const timeTag = options.timeString ? ` • ${options.timeString}` : '';
+  const timeTag = options.timeString ? ` • ${escapeHtml(options.timeString)}` : '';
   const headerTag = options.workerInfo
-    ? `<b>[${options.workerInfo} • ${deals.length} Found${timeTag}]</b>\n\n`
+    ? `<b>[${escapeHtml(options.workerInfo)} • ${deals.length} Found${timeTag}]</b>\n\n`
     : `<b>[Instamart Deals • ${deals.length} Found${timeTag}]</b>\n\n`;
 
   const messages = [];
@@ -64,7 +97,6 @@ async function sendBatchAlerts(bot, chatId, deals, options = {}) {
   for (let i = 0; i < deals.length; i++) {
     const itemText = formatCompactItem(deals[i], i + 1) + '\n\n';
 
-    // Leave a safe margin below Telegram's 4096 character limit
     if ((currentMsg + itemText).length > 3800) {
       messages.push(currentMsg.trim());
       currentMsg = itemText;
@@ -78,13 +110,9 @@ async function sendBatchAlerts(bot, chatId, deals, options = {}) {
   }
 
   for (let i = 0; i < messages.length; i++) {
-    try {
-      await bot.sendMessage(chatId, messages[i], {
-        parse_mode: 'HTML',
-        disable_web_page_preview: true
-      });
-    } catch (err) {
-      console.error('[Notifier] Failed to send batch message:', err.message);
+    const ok = await sendTelegramSafe(bot, chatId, messages[i]);
+    if (ok) {
+      console.log(`[Notifier] ✅ Delivered message ${i + 1}/${messages.length} to chat ${chatId}.`);
     }
     if (i < messages.length - 1) {
       await sleep(1000);
