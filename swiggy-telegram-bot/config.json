@@ -4,6 +4,38 @@
     "pid": "",
     "secid": ""
   },
+  "stores": [
+    {
+      "id": "1404584",
+      "pid": "1404584",
+      "secid": "1404584",
+      "label": "Home (Pod 1)"
+    },
+    {
+      "id": "1398755",
+      "pid": "1398755",
+      "secid": "1398755",
+      "label": "Arjunnagar (Pod 2)"
+    },
+    {
+      "id": "1383383",
+      "pid": "1383383",
+      "secid": "1383383",
+      "label": "Dwarka (Pod 3)"
+    },
+    {
+      "id": "406774",
+      "pid": "406774",
+      "secid": "406774",
+      "label": "Hauzkhasm (Pod 4)"
+    },
+    {
+      "id": "1402248",
+      "pid": "1402248",
+      "secid": "1402248",
+      "label": "Badarpur (Pod 5)"
+    }
+  ],
   "minDiscount": 70,
   "brandThresholds": {
     "Dubstep": 95,
